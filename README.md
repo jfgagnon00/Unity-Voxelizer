@@ -16,6 +16,12 @@ Thin surface voxelisation is used to create an octree structure. It is done enti
 6. Position the game object in the scene
 7. Clicking on *Generate* button to generate VoxelsPrimitive content
 
+### Limitations
+
+* Limited to static mesh primitives
+* Meshes must have a collider.
+* Limited to opaque material.
+
 ### Rendering
 
 TO BE COMPLETED
