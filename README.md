@@ -1,14 +1,16 @@
 # Voxelizer
 
-This project tries to implement a thin surface voxelizer inside Unity using gpu (rasterization and compute shader). Visualization is done by generating an indirect draw instance buffer with rasterized voxels.
+This project tries to implement a thin surface voxelizer inside Unity using the gpu (rasterization and compute shader). Visualization is done by generating an indirect draw instance buffer with the rasterized voxels.
 
 ## Instructions
 
 ### Scene edition
 
-1. Create GameObject
-2. Add Voxelization component
-3. Assign mesh to be voxelized. Use premade scriptable objects for resources where appropriate.
+1. Open VoxelizationScene
+2. Look for game object Voxels
+3. Press play
+4. Fiddle with Voxelization component properties.
+5. Assign a new mesh to be voxelized.
 
 ### Limitations
 

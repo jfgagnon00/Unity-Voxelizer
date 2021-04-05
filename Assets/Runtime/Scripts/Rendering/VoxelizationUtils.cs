@@ -6,7 +6,8 @@ using UnityEngine.Rendering;
 namespace Voxelizer.Rendering
 {
     /// <summary>
-    /// Encapsulates creation and update of VoxelsData
+    /// Implementation of thin surface voxelization using rasterization. Also 
+    /// generates a buffer of filled voxels.
     /// </summary>
     public static class VoxelizationUtils
     {
@@ -17,19 +18,25 @@ namespace Voxelizer.Rendering
         /// <summary>
         /// Initialize VoxelsData
         /// </summary>
-        /// <param name="bounds">AABB of voxels volume</param>
+        /// <param name="bounds">Bounds of area to voxelize</param>
         /// <param name="resolution">Number of voxels in the largest bounds dimension</param>
-        /// <param name="debugName">Name of 3D render texture resource</param>
+        /// <param name="debugName">Name given to graphic resources to help debugging</param>
         /// <returns></returns>
         public static VoxelsData CreateVoxelData(Bounds bounds, int resolution, string debugName = "")
         {
+            resolution = Math.Max(resolution, 1);
+
+            // find voxel physical size
             var fullExtent = bounds.size;
             var largestDimension = Mathf.Max(Mathf.Max(fullExtent.x, fullExtent.y), fullExtent.z);
-            var voxelSize = largestDimension / Mathf.Max(resolution, 1);
+            var voxelSize = largestDimension / resolution;
+
+            // find number of voxels that fit bounds
             var textureSizeVec3 = fullExtent / voxelSize;
             var textureSizeInt3 = Vector3Int.CeilToInt(textureSizeVec3);
             textureSizeInt3 = Vector3Int.Max(textureSizeInt3, Vector3Int.one);
 
+            // allocate 3d texture
             var voxelsRt = new RenderTexture(textureSizeInt3.x, textureSizeInt3.y, 0, RenderTextureFormat.ARGBFloat);
             voxelsRt.enableRandomWrite = true;
             voxelsRt.volumeDepth = textureSizeInt3.z;
@@ -37,10 +44,15 @@ namespace Voxelizer.Rendering
             voxelsRt.name = debugName + "_Voxels";
             voxelsRt.Create();
 
+            // visualization needs to have data for non empty voxels
+            // create buffer for those instances
             var filledVoxels = new ComputeBuffer(textureSizeInt3.x * textureSizeInt3.y * textureSizeInt3.z,
                 Marshal.SizeOf<Vector3>() * 2, 
                 ComputeBufferType.Counter | ComputeBufferType.Structured);
             filledVoxels.name = debugName + "_FilledVoxels";
+
+            // adjust voxel size so that bounds has 0.5 voxel extra in all dimensions
+            voxelSize += voxelSize / resolution;
 
             return new VoxelsData(voxelsRt, filledVoxels, voxelSize);
         }
@@ -48,9 +60,9 @@ namespace Voxelizer.Rendering
         /// <summary>
         /// Voxelize the surface of a mesh. Only color is constructed at the moment.
         /// </summary>
-        /// <param name="commandBuffer"></param>
-        /// <param name="data"></param>
-        /// <param name="mesh"></param>
+        /// <param name="commandBuffer">Command buffer receiving gpu instuctions</param>
+        /// <param name="data">Voxelization results</param>
+        /// <param name="mesh">Mesh to voxelize</param>
         public static void VoxelizeSurface(CommandBuffer commandBuffer, VoxelizationResources resources, VoxelsData data, Mesh mesh)
         {
             Begin(commandBuffer, resources, data, mesh);
@@ -65,39 +77,18 @@ namespace Voxelizer.Rendering
 
         private static void Begin(CommandBuffer commandBuffer, VoxelizationResources resources, VoxelsData data, Mesh mesh)
         {
+            // reset command buffer
+            // must render states are setup in the shader so no need to set everything
             commandBuffer.Clear();
             commandBuffer.DisableScissorRect();
 
+            // for debugging purposes, bind a render target to examine shader behaviour
+            // to be removed
             // TODO: find out how to set null render target
             //       viewport is implicitly set
             var vp = data.LargestDimenstion2D;
             commandBuffer.GetTemporaryRT(TEMP_RT, vp.x, vp.y, 0, FilterMode.Point, RenderTextureFormat.ARGBFloat);
             commandBuffer.SetRenderTarget(TEMP_RT);
-
-            // set pixel shader UAV
-            commandBuffer.SetRandomWriteTarget(1, data.VoxelsRTId);
-
-            // transform mesh space in voxelization volume space
-            // [-1, 1] in XYZ
-            var volumeSize = data.VolumeSize;
-            var view = Matrix4x4.Scale(new Vector3(2.0f / volumeSize.x, 2.0f / volumeSize.y, 2.0f / volumeSize.z)) *
-                       Matrix4x4.Translate(-mesh.bounds.center - new Vector3(0, 0, 0.5f * volumeSize.z));
-
-            // geometry shader reprojects each triangles
-            // opengl vs directx depth needs to be handled correctly
-            // hence a simple orthogonal projection
-            var proj = Matrix4x4.Ortho(-1, 1, -1, 1, -1, 1);
-            commandBuffer.SetViewProjectionMatrices(view, proj);
-
-            commandBuffer.SetGlobalVector(VoxelizationResources.VOLUME_SIZE,
-                new Vector4(data.Voxels.width,
-                            data.Voxels.height,
-                            data.Voxels.volumeDepth));
-            commandBuffer.SetGlobalVector(VoxelizationResources.VIEWPORT_ST,
-                new Vector4(1.0f / vp.x,
-                            1.0f / vp.y,
-                            -0.5f / vp.x,
-                            -0.5f / vp.y));
         }
 
         private static void End(CommandBuffer commandBuffer, VoxelizationResources resources, VoxelsData data, Mesh mesh)
@@ -107,6 +98,33 @@ namespace Voxelizer.Rendering
 
         private static void FillVoxels(CommandBuffer commandBuffer, VoxelizationResources resources, VoxelsData data, Mesh mesh)
         {
+            // transform mesh space in voxelization volume space
+            // [-1, 1] in XYZ
+            var volumeSize = data.VolumeSize;
+            var view = Matrix4x4.Scale(new Vector3(2.0f / volumeSize.x, 2.0f / volumeSize.y, 2.0f / volumeSize.z)) *
+                       Matrix4x4.Translate(-mesh.bounds.center);
+
+            // geometry shader reprojects each triangles
+            // hence a simple orthogonal projection will do for all cases
+            var proj = Matrix4x4.Ortho(-1, 1, -1, 1, -1, 1);
+            commandBuffer.SetViewProjectionMatrices(view, proj);
+
+            // set shader parameters
+            commandBuffer.SetGlobalVector(VoxelizationResources.VOLUME_SIZE,
+                new Vector4(data.Voxels.width,
+                            data.Voxels.height,
+                            data.Voxels.volumeDepth));
+
+            var vp = data.LargestDimenstion2D;
+            commandBuffer.SetGlobalVector(VoxelizationResources.VIEWPORT_ST,
+                new Vector4(1.0f / vp.x,
+                            1.0f / vp.y,
+                            -0.5f / vp.x,
+                            -0.5f / vp.y));
+
+            // pixel shader actual output is the 3d texture
+            commandBuffer.SetRandomWriteTarget(1, data.VoxelsRTId);
+
             // trigger rasterization to fill highest resolution voxels
             commandBuffer.BeginSample(FILL_VOXELS);
             commandBuffer.DrawMesh(mesh, Matrix4x4.identity, resources.VoxelizationMaterial);
@@ -115,9 +133,10 @@ namespace Voxelizer.Rendering
 
         private static void FindFilledVoxelInstances(CommandBuffer commandBuffer, VoxelizationResources resources, VoxelsData data, Mesh mesh)
         {
+            // reset number of filled voxels
             data.FilledVoxelInstances.SetCounterValue(0);
 
-            // fetch filled voxels
+            // set compute shader parameters
             var cs = resources.VoxelizationPostProcessShader;
             var kernel = resources.FindFilledVoxelsKernel;
             cs.SetTexture(kernel, VoxelizationResources.VOXELS, data.Voxels);

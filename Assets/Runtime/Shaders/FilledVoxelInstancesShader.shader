@@ -1,4 +1,7 @@
-﻿Shader "Voxelizer/FilledVoxelInstances"
+﻿// Shader use to vizualize filled voxels instances
+// Using DrawMeshInstancedIndirect to manually control data
+// and rendering step. Very basic at the moment.
+Shader "Voxelizer/FilledVoxelInstances"
 {
     SubShader
     {

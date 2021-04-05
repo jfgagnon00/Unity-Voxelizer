@@ -3,7 +3,8 @@
 namespace Voxelizer.Rendering
 {
     /// <summary>
-    /// Wraps all shaders and constant related to shaders for voxelization
+    /// Encapsulate common resources related to shaders for
+    /// voxelization creation and visualization
     /// </summary>
     [CreateAssetMenu(menuName = "Voxelizer/VoxelizationResources")]
     public class VoxelizationResources : ScriptableObject

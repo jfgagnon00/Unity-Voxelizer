@@ -1,24 +1,12 @@
-﻿using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
+﻿using UnityEngine;
 
 namespace Voxelizer.Utils
 {
     /// <summary>
-    /// Helper to move camera while playing
+    /// Poor's man helper to move camera while playing. Taken from the web.
     /// </summary>
     public class CameraNavigation : MonoBehaviour
     {
-        /*
-    Writen by Windexglow 11-13-10.  Use it, edit it, steal it I don't care.  
-    Converted to C# 27-02-13 - no credit wanted.
-    Simple flycam I made, since I couldn't find any others made public.  
-    Made simple to use (drag and drop, done) for regular keyboard layout  
-    wasd : basic movement
-    shift : Makes camera accelerate
-    space : Moves camera on X and Z axis only.  So camera doesn't gain any height*/
-
-
         public float mainSpeed = 30.0f; //regular speed
         public float shiftAdd = 250.0f; //multiplied by how long shift is held.  Basically running
         public float maxShift = 1000.0f; //Maximum speed when holdin gshift
@@ -69,7 +57,8 @@ namespace Voxelizer.Utils
         }
 
         private Vector3 GetBaseInput()
-        { //returns the basic values, if it's 0 than it's not active.
+        { 
+            //returns the basic values, if it's 0 than it's not active.
             Vector3 p_Velocity = new Vector3();
             if (Input.GetKey(KeyCode.W))
             {

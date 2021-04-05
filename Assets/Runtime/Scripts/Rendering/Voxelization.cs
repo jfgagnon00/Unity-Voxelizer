@@ -5,14 +5,15 @@ using UnityEngine.Rendering;
 namespace Voxelizer.Rendering
 {
     /// <summary>
-    /// Responsible for rendering properties of VoxelsPrimitive.
+    /// Encapsulate resources needed for a specific mesh voxelization 
+    /// and trigger its generation and its rendering.
     /// </summary>
     public class Voxelization : MonoBehaviour
     {
         private const string VOXELIZATION = "Voxelization";
 
         [SerializeField]
-        [Tooltip("Voxelization resources")]
+        [Tooltip("Voxelization global resources")]
         private VoxelizationResources _resources = null;
 
         [SerializeField]
@@ -24,25 +25,42 @@ namespace Voxelizer.Rendering
         [Range(2, 1024)]
         private int _resolution = 2;
 
-        [SerializeField]
-        [Range(0, 10)]
-        [Tooltip("Lod bias at rendering")]
-        private int _lod = 0;
+        // TODO: implement
+        //[SerializeField]
+        //[Range(0, 10)]
+        //[Tooltip("Lod bias at rendering")]
+        //private int _lod = 0;
 
-        [SerializeField]
-        [Tooltip("Set to true to voxelize every frame")]
-        private bool _continuousVoxelization = false;
-        
         private VoxelsData _voxelsData;
         private ComputeBuffer _indirectDrawArgs;
         private Material _indirectDrawMaterial;
         private MaterialPropertyBlock _materialPropertyBlock;
         private CommandBuffer _commandBuffer;
 
+        // TODO: not clean way to enable revoxelization from editor
+        //       but helps debugging
+        private bool _forceVoxelize = false;
+
         private void Update()
         {
+            if (_forceVoxelize)
+            {
+                // dispose of previous resources
+                _forceVoxelize = false;
+                StopAllCoroutines();
+
+                if (Camera.main != null && _commandBuffer != null)
+                    Camera.main.RemoveCommandBuffer(CameraEvent.AfterEverything, _commandBuffer);
+
+                DisposeAll();
+                
+                // revoxelize
+                Voxelize();
+            }
+
             if (_mesh != null && _indirectDrawArgs != null)
             {
+                // get volume bounds so frustum culling works fine
                 var instancedMesh = _resources.FilledVoxelInstanceMesh;
                 var localToWorld = gameObject.transform.localToWorldMatrix;
                 var volumeLocalBounds = new Bounds(_mesh.bounds.center, _voxelsData.VolumeSize);
@@ -53,6 +71,7 @@ namespace Voxelizer.Rendering
                 // take into account this gameobject transform
                 _indirectDrawMaterial.SetMatrix(VoxelizationResources.VOLUME_LOCAL_TO_WORLD, localToWorld);
 
+                // draw all filled voxels instances
                 Graphics.DrawMeshInstancedIndirect(instancedMesh, 
                     0,
                     _indirectDrawMaterial,
@@ -63,34 +82,21 @@ namespace Voxelizer.Rendering
             }
         }
 
+        private void OnValidate()
+        {
+            // notify of a change
+            // next update will draw everything
+            _forceVoxelize = true;
+        }
+
         private void OnEnable()
         {
-            if (_mesh != null && _voxelsData == null)
-            {
-                _voxelsData = VoxelizationUtils.CreateVoxelData(_mesh.bounds, _resolution, _mesh.name);
-                CreateIndirectDraw();
-                Voxelize();
-            }
-
-            if (_continuousVoxelization &&
-                Camera.main != null &&
-                _commandBuffer != null)
-            {
-                Camera.main.AddCommandBuffer(CameraEvent.AfterEverything, _commandBuffer);
-            }
+            Voxelize();
         }
 
         private void OnDisable()
         {
             StopAllCoroutines();
-
-            if (_continuousVoxelization &&
-                Camera.main != null &&
-                _commandBuffer != null)
-            {
-                Camera.main.RemoveCommandBuffer(CameraEvent.AfterEverything, _commandBuffer);
-            }
-
             DisposeAll();
         }
 
@@ -113,6 +119,15 @@ namespace Voxelizer.Rendering
 
         private void Voxelize()
         {
+            // bail out if data is not properly setup
+            if (_mesh == null || _resources == null) return;
+
+            // create resources whenever necessary
+            if (_voxelsData == null)
+                _voxelsData = VoxelizationUtils.CreateVoxelData(_mesh.bounds, _resolution, _mesh.name);
+
+            if (_indirectDrawArgs == null) CreateIndirectDrawResources();
+
             if (_commandBuffer == null)
             {
                 _commandBuffer = new CommandBuffer();
@@ -121,15 +136,14 @@ namespace Voxelizer.Rendering
 
             VoxelizationUtils.VoxelizeSurface(_commandBuffer, _resources, _voxelsData, _mesh);
 
-            // TODO: does not work since _commandBuffer needs Unity
-            //       to bind many regular constant buffers
-            if (!_continuousVoxelization)
-                Graphics.ExecuteCommandBuffer(_commandBuffer);
+            // execute voxelization at the end of the regular rendering
+            if (Camera.main != null)
+                Camera.main.AddCommandBuffer(CameraEvent.AfterEverything, _commandBuffer);
 
+            // since we do an indirect draw call, must recuperate desired instance count
             StartCoroutine(CopyCounter());
         }
 
-        // TODO: improve this
         private IEnumerator CopyCounter()
         {
             yield return new WaitForEndOfFrame();
@@ -138,13 +152,15 @@ namespace Voxelizer.Rendering
                 _indirectDrawArgs, 
                 sizeof(uint));
 
-            if (_continuousVoxelization)
-                Voxelize();
-            else
-                DisposeCommandBuffer();
+            // done voxelizing, remove command buffer
+            if (Camera.main != null)
+                Camera.main.RemoveCommandBuffer(CameraEvent.AfterEverything, _commandBuffer);
+
+            // done with command buffer
+            DisposeCommandBuffer();
         }
 
-        private void CreateIndirectDraw()
+        private void CreateIndirectDrawResources()
         {
             _indirectDrawMaterial = new Material(_resources.FilledVoxelInstanceShader);
             _indirectDrawMaterial.enableInstancing = true;
