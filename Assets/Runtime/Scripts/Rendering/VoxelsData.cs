@@ -12,6 +12,8 @@ namespace Voxelizer.Rendering
         public RenderTexture Voxels { get; private set; }
         public RenderTargetIdentifier VoxelsRTId { get; private set; }
 
+        public ComputeBuffer FilledVoxelInstances { get; private set; }
+
         public float VoxelSize { get; private set; }
 
         public Vector3 VolumeSize => new Vector3(Voxels.width, Voxels.height, Voxels.volumeDepth) * VoxelSize;
@@ -26,17 +28,23 @@ namespace Voxelizer.Rendering
             }
         }
 
-        public VoxelsData(RenderTexture voxels, float voxelSize)
+        public VoxelsData(RenderTexture voxels, 
+            ComputeBuffer filledVoxelInstances, 
+            float voxelSize)
         {
             Voxels = voxels;
             VoxelsRTId = new RenderTargetIdentifier(Voxels);
             VoxelSize = voxelSize;
+            FilledVoxelInstances = filledVoxelInstances;
         }
 
         public void Dispose()
         {
             if (Voxels != null) Voxels.Release();
             Voxels = null;
+
+            if (FilledVoxelInstances != null) FilledVoxelInstances.Release();
+            FilledVoxelInstances = null;
         }
     }
 }

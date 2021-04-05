@@ -1,0 +1,39 @@
+﻿#pragma enable_d3d11_debug_symbols
+
+#pragma kernel FindFilledVoxels
+
+#define VOXEL_INSTANCES_RW_ACCESS
+#include "VoxelInstances.hlsl"
+#include "Voxels.hlsl"
+
+int3 _VolumeSize; // pixels
+float4x4 _IndexToPosition;
+
+[numthreads(8, 8, 8)]
+void FindFilledVoxels(int3 id : SV_DispatchThreadID)
+{
+    // bail on threads that are outside of voxule
+    if (id.x >= _VolumeSize.x ||
+        id.y >= _VolumeSize.y ||
+        id.z >= _VolumeSize.z)
+    {
+        return;
+    }
+
+    // fetch color
+    int4 voxelIndex = int4(id, 0);
+    float4 color = _Voxels.Load(voxelIndex);
+
+    // is voxel filled?
+    if (color.a > 0.0)
+    {
+        // yes, then create an instance at the voxel's coordinates
+        FilledVoxelInstance instance;
+
+        instance.position = mul(_IndexToPosition, float4(id, 1)).xyz;
+        instance.color = color.rgb;
+
+        uint newInstanceIndex = _FilledVoxelInstances.IncrementCounter();
+        _FilledVoxelInstances[newInstanceIndex] = instance;
+    }
+}

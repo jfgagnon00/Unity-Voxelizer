@@ -1,11 +1,5 @@
 ﻿Shader "Voxelizer/Voxelization"
 {
-    Properties
-    {
-        _MainTex ("Texture", 2D) = "white" {}
-        _Color ("Main Color", Color) = (1,1,1,1)
-    }
-
     SubShader
     {
         Tags { "RenderType"="Opaque" "ForceNoShadowCasting"="True" }
@@ -32,6 +26,9 @@
 
             #include "UnityCG.cginc"
 
+            #define VOXELS_RW_ACCESS
+            #include "Voxels.hlsl"
+
             struct VsInput
             {
                 float3 position : POSITION;
@@ -48,9 +45,7 @@
 
             float4 _VolumeSize; // in pixels
             float4 _ViewportST;
-
-            RWTexture3D<float4> _Voxels;
-
+          
             GsPsInput vsMain(VsInput vsIn)
             {
                 GsPsInput output;
@@ -157,7 +152,7 @@
                 uint3 index = uint3(position.xyz);
 
                 // store result
-                float4 result = float4(color, 1.0);
+                float4 result = float4(color, 100.0);
                 _Voxels[index] = result;
 
                 return result;

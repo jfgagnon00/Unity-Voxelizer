@@ -13,3 +13,9 @@ MonoBehaviour:
   m_Name: VoxelizationResources
   m_EditorClassIdentifier: 
   _voxelizationShader: {fileID: 4800000, guid: 023e6a461649b2646b30c8c581945854, type: 3}
+  _voxelizationPostProcessShader: {fileID: 7200000, guid: 7b28bd2d2ad43df489afcc25eede5b43,
+    type: 3}
+  _filledVoxelInstanceMesh: {fileID: 10202, guid: 0000000000000000e000000000000000,
+    type: 0}
+  _filledVoxelInstanceShader: {fileID: 4800000, guid: 43f889906f3aa5348bee87fb8c20ed1b,
+    type: 3}
