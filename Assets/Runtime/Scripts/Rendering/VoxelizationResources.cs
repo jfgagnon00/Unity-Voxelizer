@@ -11,7 +11,7 @@ namespace Voxelizer.Rendering
     {
         // _voxelizationShader uniforms name
         public static int VOLUME_SIZE = Shader.PropertyToID("_VolumeSize");
-        public static int VIEWPORT_ST = Shader.PropertyToID("_ViewportST");
+        public static int PROJECTIONS = Shader.PropertyToID("_Projections");
 
         // _voxelizationPostProcessShader values
         public static string FIND_FILLED_VOXELS_KERNEL = "FindFilledVoxels";
@@ -86,8 +86,8 @@ namespace Voxelizer.Rendering
         public Mesh FilledVoxelInstanceMesh => _filledVoxelInstanceMesh;
 
         [SerializeField]
-        [Tooltip("Shader used to visualize voxels")]
-        private Shader _filledVoxelInstanceShader = null;
-        public Shader FilledVoxelInstanceShader => _filledVoxelInstanceShader;
+        [Tooltip("Material used to visualize voxels")]
+        private Material _filledVoxelInstanceMaterial = null;
+        public Material FilledVoxelInstanceMaterial => _filledVoxelInstanceMaterial;
     }
 }

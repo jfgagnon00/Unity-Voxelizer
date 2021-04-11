@@ -20,26 +20,30 @@ namespace Voxelizer.Rendering
         public float VoxelSize { get; private set; }
 
         // full physical size of volume
+        public Vector3 VolumeCenter { get; private set; }
         public Vector3 VolumeSize => new Vector3(Voxels.width, Voxels.height, Voxels.volumeDepth) * VoxelSize;
+        public Bounds VolumeBounds => new Bounds(VolumeCenter, VolumeSize);
 
         // 2 most largest dimension value (used by rasterization)
-        public Vector2Int LargestDimenstion2D
+        public Vector2Int ViewportSize
         {
             get
             {
                 int[] dimensions = { Voxels.width, Voxels.height, Voxels.volumeDepth };
                 Array.Sort(dimensions);
-                return new Vector2Int(dimensions[2], dimensions[1]);
+                return new Vector2Int(dimensions[2], dimensions[2]);
             }
         }
 
         public VoxelsData(RenderTexture voxels, 
             ComputeBuffer filledVoxelInstances, 
-            float voxelSize)
+            float voxelSize,
+            Vector3 volumeCenter)
         {
             Voxels = voxels;
             VoxelsRTId = new RenderTargetIdentifier(Voxels);
             VoxelSize = voxelSize;
+            VolumeCenter = volumeCenter;
             FilledVoxelInstances = filledVoxelInstances;
         }
 

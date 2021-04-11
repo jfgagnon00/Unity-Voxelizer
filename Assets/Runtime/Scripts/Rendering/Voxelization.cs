@@ -8,6 +8,7 @@ namespace Voxelizer.Rendering
     /// Encapsulate resources needed for a specific mesh voxelization 
     /// and trigger its generation and its rendering.
     /// </summary>
+    [RequireComponent(typeof(MeshFilter))]
     public class Voxelization : MonoBehaviour
     {
         private const string VOXELIZATION = "Voxelization";
@@ -16,14 +17,17 @@ namespace Voxelizer.Rendering
         [Tooltip("Voxelization global resources")]
         private VoxelizationResources _resources = null;
 
-        [SerializeField]
-        [Tooltip("Mesh to voxelize")]
-        private Mesh _mesh = null;
+        // Mesh to voxelize
+        private Mesh Mesh => gameObject.GetComponent<MeshFilter>().mesh;
 
         [SerializeField]
         [Tooltip("Number of voxels in largest Mesh dimension")]
         [Range(2, 1024)]
         private int _resolution = 2;
+
+        [SerializeField]
+        [Tooltip("Show bounds")]
+        private bool _showBoundsGizmo = false;
 
         // TODO: implement
         //[SerializeField]
@@ -48,22 +52,20 @@ namespace Voxelizer.Rendering
                 // dispose of previous resources
                 _forceVoxelize = false;
                 StopAllCoroutines();
-
-                if (Camera.main != null && _commandBuffer != null)
-                    Camera.main.RemoveCommandBuffer(CameraEvent.AfterEverything, _commandBuffer);
-
                 DisposeAll();
                 
                 // revoxelize
                 Voxelize();
             }
 
-            if (_mesh != null && _indirectDrawArgs != null)
+            var mesh = Mesh;
+
+            if (mesh != null && _indirectDrawArgs != null)
             {
                 // get volume bounds so frustum culling works fine
                 var instancedMesh = _resources.FilledVoxelInstanceMesh;
                 var localToWorld = gameObject.transform.localToWorldMatrix;
-                var volumeLocalBounds = new Bounds(_mesh.bounds.center, _voxelsData.VolumeSize);
+                var volumeLocalBounds = _voxelsData.VolumeBounds;
                 var volumeWorldBounds = GeometryUtility.CalculateBounds(
                     new Vector3[] {volumeLocalBounds.min, volumeLocalBounds.max}, 
                     localToWorld);
@@ -72,13 +74,24 @@ namespace Voxelizer.Rendering
                 _indirectDrawMaterial.SetMatrix(VoxelizationResources.VOLUME_LOCAL_TO_WORLD, localToWorld);
 
                 // draw all filled voxels instances
-                Graphics.DrawMeshInstancedIndirect(instancedMesh, 
+                Graphics.DrawMeshInstancedIndirect(instancedMesh,
                     0,
                     _indirectDrawMaterial,
-                    volumeWorldBounds, 
+                    volumeWorldBounds,
                     _indirectDrawArgs,
                     0,
                     _materialPropertyBlock);
+            }
+        }
+
+        private void OnDrawGizmosSelected()
+        {
+            // helper to display volume bounds
+            if (_voxelsData != null && _showBoundsGizmo)
+            {
+                var volumeLocalBounds = _voxelsData.VolumeBounds;
+                Gizmos.color = new Color(1, 0, 0, 1);
+                Gizmos.DrawWireCube(volumeLocalBounds.center, volumeLocalBounds.size);
             }
         }
 
@@ -119,12 +132,14 @@ namespace Voxelizer.Rendering
 
         private void Voxelize()
         {
+            var mesh = Mesh;
+
             // bail out if data is not properly setup
-            if (_mesh == null || _resources == null) return;
+            if (mesh == null || _resources == null) return;
 
             // create resources whenever necessary
             if (_voxelsData == null)
-                _voxelsData = VoxelizationUtils.CreateVoxelData(_mesh.bounds, _resolution, _mesh.name);
+                _voxelsData = VoxelizationUtils.CreateVoxelData(mesh.bounds, _resolution, mesh.name);
 
             if (_indirectDrawArgs == null) CreateIndirectDrawResources();
 
@@ -134,11 +149,10 @@ namespace Voxelizer.Rendering
                 _commandBuffer.name = VOXELIZATION;
             }
 
-            VoxelizationUtils.VoxelizeSurface(_commandBuffer, _resources, _voxelsData, _mesh);
+            VoxelizationUtils.VoxelizeSurface(_commandBuffer, _resources, _voxelsData, mesh);
 
             // execute voxelization at the end of the regular rendering
-            if (Camera.main != null)
-                Camera.main.AddCommandBuffer(CameraEvent.AfterEverything, _commandBuffer);
+            Graphics.ExecuteCommandBuffer(_commandBuffer);
 
             // since we do an indirect draw call, must recuperate desired instance count
             StartCoroutine(CopyCounter());
@@ -152,17 +166,13 @@ namespace Voxelizer.Rendering
                 _indirectDrawArgs, 
                 sizeof(uint));
 
-            // done voxelizing, remove command buffer
-            if (Camera.main != null)
-                Camera.main.RemoveCommandBuffer(CameraEvent.AfterEverything, _commandBuffer);
-
             // done with command buffer
             DisposeCommandBuffer();
         }
 
         private void CreateIndirectDrawResources()
         {
-            _indirectDrawMaterial = new Material(_resources.FilledVoxelInstanceShader);
+            _indirectDrawMaterial = new Material(_resources.FilledVoxelInstanceMaterial);
             _indirectDrawMaterial.enableInstancing = true;
 
             var volumeSize = _voxelsData.VolumeSize;

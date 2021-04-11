@@ -7,7 +7,7 @@ This project tries to implement a thin surface voxelizer inside Unity using the 
 ### Scene edition
 
 1. Open VoxelizationScene
-2. Look for game object Voxels
+2. Look for the game object Voxels
 3. Press play
 4. Fiddle with Voxelization component properties.
 5. Assign a new mesh to be voxelized.
@@ -16,8 +16,8 @@ This project tries to implement a thin surface voxelizer inside Unity using the 
 
 * Limited to static mesh
 * Voxelization outputs limited to mesh vertex color.
-* Voxelization still buggy
-* Visualization is minimal
+* Voxelization still has some minor issues
+* Visualization is based on Unity Standard shader
 * LOD not implemented
 
 # Credits

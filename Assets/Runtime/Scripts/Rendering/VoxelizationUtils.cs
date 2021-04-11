@@ -54,7 +54,7 @@ namespace Voxelizer.Rendering
             // adjust voxel size so that bounds has 0.5 voxel extra in all dimensions
             voxelSize += voxelSize / resolution;
 
-            return new VoxelsData(voxelsRt, filledVoxels, voxelSize);
+            return new VoxelsData(voxelsRt, filledVoxels, voxelSize, bounds.center);
         }
 
         /// <summary>
@@ -86,7 +86,7 @@ namespace Voxelizer.Rendering
             // to be removed
             // TODO: find out how to set null render target
             //       viewport is implicitly set
-            var vp = data.LargestDimenstion2D;
+            var vp = data.ViewportSize;
             commandBuffer.GetTemporaryRT(TEMP_RT, vp.x, vp.y, 0, FilterMode.Point, RenderTextureFormat.ARGBFloat);
             commandBuffer.SetRenderTarget(TEMP_RT);
         }
@@ -96,31 +96,101 @@ namespace Voxelizer.Rendering
             commandBuffer.ReleaseTemporaryRT(TEMP_RT);
         }
 
+        private static Matrix4x4 PermuteRows(Matrix4x4 m, int rowIndex0, int rowIndex1)
+        {
+            var row0 = m.GetRow(rowIndex0);
+            var row1 = m.GetRow(rowIndex1);
+            var result = m;
+            result.SetRow(rowIndex0, row1);
+            result.SetRow(rowIndex1, row0);
+            return result;
+        }
+
+        private static Vector3 Permute(Vector3 v, int i0, int i1)
+        {
+            var result = v;
+            result[i0] = v[i1];
+            result[i1] = v[i0];
+            return result;
+        }
+
+        private static Matrix4x4 GetProjection(VoxelsData data, int i0, int i1)
+        {
+            // goal is to find a matrix that maps volume local coordinates 
+            // to voxel indices taking into account projection on a specific
+            // face and face resolution
+
+            // permute some values to deal with face projection
+            var volumeCorner = Permute(data.VolumeBounds.min, i0, i1);
+            var volumeSize = Permute(data.VolumeSize, i0, i1);
+
+            var faceResolution = (Vector2) Permute(
+                new Vector3(data.Voxels.width, data.Voxels.height, data.Voxels.volumeDepth), 
+                i0, i1);
+
+            // permute volume coordinates for face projection
+            var permuteAxis = PermuteRows(Matrix4x4.identity, i0, i1);
+
+            // actual projection
+            var viewProjection =
+                // map XY to [-1, 1]
+                // map Z to [0, 1]
+                Matrix4x4.Translate(new Vector3(-1, -1, 0)) *
+                Matrix4x4.Scale(new Vector3(2, 2, 1)) *
+
+                // map to normalize volume coordinates [0, 1] in all axis
+                Matrix4x4.Scale(new Vector3(1.0f / volumeSize.x, 1.0f / volumeSize.y, 1.0f / volumeSize.z)) *
+                Matrix4x4.Translate(-volumeCorner);
+
+            // scale to match desired face resolution
+            var vp = (Vector2) data.ViewportSize;
+            var scale = faceResolution / vp;
+            var scalarScale = Mathf.Max(scale.x, scale.y);
+
+            // scale to compensate for face aspect ratio
+            // resolution of a face != resolution of viewport
+            Vector3 aspectRatioCompensation;
+            var aspectRatio = volumeSize.x / volumeSize.y;
+            if (aspectRatio >= 1.0f)
+                aspectRatioCompensation = new Vector3(1, -1.0f / aspectRatio, 1);
+            else
+                aspectRatioCompensation = new Vector3(aspectRatio, -1, 1);
+
+            // translate to fit texture corners and not viewport center
+            var vpCenter = vp * 0.5f;
+            var faceCenter = faceResolution * 0.5f;
+            var delta = faceCenter - vpCenter;
+            // -2 in y since Unity uses opengl convention
+            var normalizedDelta = delta * new Vector2(2, -2) / vp;
+            var fitCornerTranslation = Matrix4x4.Translate(normalizedDelta);
+
+            // composite everything together
+            // Unity uses lhs, so compositing happens from last to first
+            var finalProjection =
+                fitCornerTranslation *
+                Matrix4x4.Scale(aspectRatioCompensation * scalarScale) *
+                viewProjection *
+                permuteAxis;
+
+            return finalProjection;
+        }
+
         private static void FillVoxels(CommandBuffer commandBuffer, VoxelizationResources resources, VoxelsData data, Mesh mesh)
         {
-            // transform mesh space in voxelization volume space
-            // [-1, 1] in XYZ
-            var volumeSize = data.VolumeSize;
-            var view = Matrix4x4.Scale(new Vector3(2.0f / volumeSize.x, 2.0f / volumeSize.y, 2.0f / volumeSize.z)) *
-                       Matrix4x4.Translate(-mesh.bounds.center);
-
-            // geometry shader reprojects each triangles
-            // hence a simple orthogonal projection will do for all cases
-            var proj = Matrix4x4.Ortho(-1, 1, -1, 1, -1, 1);
-            commandBuffer.SetViewProjectionMatrices(view, proj);
+            var projections = new Matrix4x4[3]
+            {
+                GetProjection(data, 0, 2), // project on X
+                GetProjection(data, 1, 2), // project on Y
+                GetProjection(data, 2, 2)  // project on Z
+            };
+            commandBuffer.SetGlobalMatrixArray(VoxelizationResources.PROJECTIONS, projections);
 
             // set shader parameters
             commandBuffer.SetGlobalVector(VoxelizationResources.VOLUME_SIZE,
                 new Vector4(data.Voxels.width,
                             data.Voxels.height,
-                            data.Voxels.volumeDepth));
-
-            var vp = data.LargestDimenstion2D;
-            commandBuffer.SetGlobalVector(VoxelizationResources.VIEWPORT_ST,
-                new Vector4(1.0f / vp.x,
-                            1.0f / vp.y,
-                            -0.5f / vp.x,
-                            -0.5f / vp.y));
+                            data.Voxels.volumeDepth,
+                            0));
 
             // pixel shader actual output is the 3d texture
             commandBuffer.SetRandomWriteTarget(1, data.VoxelsRTId);
@@ -144,7 +214,7 @@ namespace Voxelizer.Rendering
             cs.SetInts(VoxelizationResources.VOLUME_SIZE,
                 new int[] { data.Voxels.width, data.Voxels.height, data.Voxels.volumeDepth });
 
-            var volumeSize = data.VolumeSize;
+            var volumeBounds = data.VolumeBounds;
 
             // transform index space to mesh local space
             // lhs system; matrix must be read from 
@@ -152,12 +222,10 @@ namespace Voxelizer.Rendering
             var indexToPosition =
 
                 // finally mesh local space
-                Matrix4x4.Translate(mesh.bounds.center) *
+                Matrix4x4.Translate(volumeBounds.center) *
 
                 // [-0.5, 0.5] space [-0.5 * volumeSize, 0.5 * volumeSize]
-                Matrix4x4.Scale(new Vector3(volumeSize.x,
-                                            volumeSize.y,
-                                            volumeSize.z)) *
+                Matrix4x4.Scale(volumeBounds.size) *
 
                 // [0, 1] space to [-0.5, 0.5] space
                 Matrix4x4.Translate(new Vector3(-0.5f, -0.5f, -0.5f)) *
@@ -184,7 +252,9 @@ namespace Voxelizer.Rendering
 
         private static int NumGroup(int count, int size)
         {
-            return Math.Max(1, count / size);
+            var numGroup = count / size;
+            numGroup += count % size > 0 ? 1 : 0;
+            return Math.Max(1, numGroup);
         }
     }
 }

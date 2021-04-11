@@ -19,3 +19,5 @@ MonoBehaviour:
     type: 0}
   _filledVoxelInstanceShader: {fileID: 4800000, guid: 43f889906f3aa5348bee87fb8c20ed1b,
     type: 3}
+  _filledVoxelInstanceMaterial: {fileID: 2100000, guid: 85bb58883d92b6b46875392518558c09,
+    type: 2}
